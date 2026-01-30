@@ -16,7 +16,7 @@ router.put('/register', async function (req, res, next) {
         if (req.body.usertype === "caregiver") {
             tableName = "caregiver_account";
             sql = `
-        INSERT INTO patient_app.caregiver_account 
+        INSERT INTO caregiver_account 
         (name_last, name_first, name_middle, email, username, password, date_updated, timestamp) 
         VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW());
       `;
@@ -31,7 +31,7 @@ router.put('/register', async function (req, res, next) {
         } else if (req.body.usertype === "patient") {
             tableName = "patient_account";
             sql = `
-        INSERT INTO patient_app.patient_account 
+        INSERT INTO patient_account 
         (name_last, name_first, name_middle, email, username, password, FK_caregiverid, date_updated, timestamp) 
         VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW());
       `;
