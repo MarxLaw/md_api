@@ -196,7 +196,7 @@ router.post('/myprofile', async function (req, res, next) {
 
 
 router.post('/checkrequest', async function (req, res, next) {
-    const sql = "SELECT * FROM patient_app.request WHERE FK_patient = ? AND FK_caregiver = ?";
+    const sql = "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ?";
     const params = [req.body.patient_id, req.body.caregiver_id, req.body.status];
 
     try {
@@ -219,7 +219,7 @@ router.post('/checkrequest', async function (req, res, next) {
 router.put('/sendrequest', async function (req, res, next) {
     try {
 
-        const checkSql = "SELECT * FROM patient_app.request WHERE FK_patient = ? AND FK_caregiver = ? AND status = ?";
+        const checkSql = "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ? AND status = ?";
         const [rows] = await mysqlConnection.promise().query(checkSql, [req.body.patient_id, req.body.caregiver_id, req.body.status]);
 
         if (rows.length > 0) {
@@ -229,7 +229,7 @@ router.put('/sendrequest', async function (req, res, next) {
             });
         }
 
-        const sql = "INSERT INTO patient_app.request (`FK_patient`, `FK_caregiver`, `status`, `date_request`, `timestamp`) VALUES (?, ?, ?, NOW(), NOW());";
+        const sql = "INSERT INTO request (`FK_patient`, `FK_caregiver`, `status`, `date_request`, `timestamp`) VALUES (?, ?, ?, NOW(), NOW());";
         const params = [req.body.patient_id, req.body.caregiver_id, req.body.status];
 
         const [pk, message] = await mysqlConnection.promise().query(sql, params);
@@ -252,7 +252,7 @@ router.put('/sendrequest', async function (req, res, next) {
 router.delete('/deleterequest', async function (req, res) {
     try {
 
-        const sql = "DELETE FROM patient_app.request WHERE FK_patient = ? AND FK_caregiver = ?";
+        const sql = "DELETE FROM request WHERE FK_patient = ? AND FK_caregiver = ?";
         const params = [req.body.patient_id, req.body.caregiver_id];
 
         const [result] = await mysqlConnection.promise().query(sql, params);
