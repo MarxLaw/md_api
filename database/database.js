@@ -9,10 +9,10 @@ const mysqlConnection = mysql.createConnection({
     // port: '3308'
 
 
-    host: 'localhost',
-    user: 'root',
-    password: 'p@ssw0rd',
-    database: 'patient_app'
+    host: process.env.MYSQLHOST,
+  user: process.env.MYSQLUSER,
+  password: process.env.MYSQLPASSWORD,
+  database: process.env.MYSQLDATABASE,
 });
 
 mysqlConnection.connect(function (error) {
