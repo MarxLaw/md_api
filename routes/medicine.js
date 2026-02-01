@@ -166,9 +166,27 @@ router.post('/fetchpatient', async function (req, res, next) {
 });
 
 router.post('/myprofile', async function (req, res, next) {
-    const sql = "SELECT * FROM caregiver_account WHERE account_id = ?;";
-    const params = [req.body.account_id];
 
+    const { account_id, usertype } = req.body;
+    let sql;
+    if (usertype === "caregiver") {
+        sql = "SELECT * FROM caregiver_account WHERE account_id = ?;";
+    } else if (usertype === "patient") {
+        sql = `SELECT 
+            patient_account.*,
+            CONCAT(
+                caregiver_account.name_first, 
+                ' ', 
+                caregiver_account.name_last
+                ) AS caregiver_name
+            FROM patient_app.patient_account
+            LEFT JOIN caregiver_account 
+            ON patient_account.account_id = caregiver_account.account_id
+            WHERE patient_account.account_id = ?;`;
+    } else {
+        return res.status(400).json({ message: "Invalid usertype" });
+    }
+    const params = [account_id];
     try {
         const [rows] = await mysqlConnection.promise().query(sql, params);
 
@@ -180,6 +198,7 @@ router.post('/myprofile', async function (req, res, next) {
         const result = rows.map(row => ({
             patient_id: row.id,
             account_id: row.account_id,
+            caregiver_name: row.caregiver_name,
             name_last: row.name_last,
             name_first: row.name_first,
             name_middle: row.name_middle,
@@ -195,8 +214,62 @@ router.post('/myprofile', async function (req, res, next) {
 });
 
 
+router.post('/fetchrequest', async function (req, res, next) {
+    const sql = `SELECT * FROM request 
+                left join caregiver_account on 
+                caregiver_account.account_id = request.FK_caregiver 
+                WHERE FK_patient = ?  AND status = 0;`;
+    const params = [req.body.patient_id];
+
+    try {
+        const [rows] = await mysqlConnection.promise().query(sql, params);
+
+        if (rows.length === 0) {
+            res.status(404).json({ error: 'No data found' });
+            return;
+        }
+
+        const result = rows.map(row => ({
+            id: row.request_id,
+            patient_id: row.FK_patient,
+            caregiver_id: row.FK_caregiver,
+            caregiver_name: `${row.name_first} ${row.name_last}`,
+            status: row.status,
+            created_at: row.date_request,
+        }));
+
+        res.json(result);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+router.post('/acceptrequest', async function (req, res, next) {
+    const sql = "UPDATE request SET `status` = '1' WHERE request_id = ?;";
+    const sql2 = "UPDATE patient_account SET FK_caregiverid = ? WHERE account_id = ?;";
+    const params = [req.body.request_id];
+    const params2 = [req.body.caregiver_id, req.body.patient_id];
+
+    try {
+        const [rows] = await mysqlConnection.promise().query(sql, params);
+
+        if (rows.length === 0) {
+            // No existing request
+            return res.json({ success: false });
+        }
+
+        const [rows2] = await mysqlConnection.promise().query(sql2, params2);
+        // Request exists
+        return res.json({ success: true, data: rows2 });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 router.post('/checkrequest', async function (req, res, next) {
-    const sql = "SELECT * FROM patient_app.request WHERE FK_patient = ? AND FK_caregiver = ?";
+    const sql = "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ? ";
     const params = [req.body.patient_id, req.body.caregiver_id, req.body.status];
 
     try {
@@ -219,7 +292,7 @@ router.post('/checkrequest', async function (req, res, next) {
 router.put('/sendrequest', async function (req, res, next) {
     try {
 
-        const checkSql = "SELECT * FROM patient_app.request WHERE FK_patient = ? AND FK_caregiver = ? AND status = ?";
+        const checkSql = "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ? AND status = ?";
         const [rows] = await mysqlConnection.promise().query(checkSql, [req.body.patient_id, req.body.caregiver_id, req.body.status]);
 
         if (rows.length > 0) {
@@ -229,7 +302,7 @@ router.put('/sendrequest', async function (req, res, next) {
             });
         }
 
-        const sql = "INSERT INTO patient_app.request (`FK_patient`, `FK_caregiver`, `status`, `date_request`, `timestamp`) VALUES (?, ?, ?, NOW(), NOW());";
+        const sql = "INSERT INTO request (`FK_patient`, `FK_caregiver`, `status`, `date_request`, `timestamp`) VALUES (?, ?, ?, NOW(), NOW());";
         const params = [req.body.patient_id, req.body.caregiver_id, req.body.status];
 
         const [pk, message] = await mysqlConnection.promise().query(sql, params);
@@ -252,7 +325,7 @@ router.put('/sendrequest', async function (req, res, next) {
 router.delete('/deleterequest', async function (req, res) {
     try {
 
-        const sql = "DELETE FROM patient_app.request WHERE FK_patient = ? AND FK_caregiver = ?";
+        const sql = "DELETE FROM request WHERE FK_patient = ? AND FK_caregiver = ?";
         const params = [req.body.patient_id, req.body.caregiver_id];
 
         const [result] = await mysqlConnection.promise().query(sql, params);
