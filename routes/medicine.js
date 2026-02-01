@@ -269,7 +269,7 @@ router.post('/acceptrequest', async function (req, res, next) {
 });
 
 router.post('/checkrequest', async function (req, res, next) {
-    const sql = "SELECT * FROM patient_app.request WHERE FK_patient = ? AND FK_caregiver = ?";
+    const sql = "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ?";
     const params = [req.body.patient_id, req.body.caregiver_id, req.body.status];
 
     try {
