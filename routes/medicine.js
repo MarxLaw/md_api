@@ -179,7 +179,7 @@ router.post('/myprofile', async function (req, res, next) {
                 ' ', 
                 caregiver_account.name_last
                 ) AS caregiver_name
-            FROM patient_app.patient_account
+            FROM patient_account
             LEFT JOIN caregiver_account 
             ON patient_account.account_id = caregiver_account.account_id
             WHERE patient_account.account_id = ?;`;
