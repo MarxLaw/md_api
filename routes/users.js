@@ -62,7 +62,7 @@ router.put('/register', async function (req, res, next) {
 
         // Update the row with account_id
         await mysqlConnection.promise().query(
-            `UPDATE patient_app.${tableName} SET account_id = ? WHERE id = ?`,
+            `UPDATE ${tableName} SET account_id = ? WHERE id = ?`,
             [accountId, pkId]
         );
 
