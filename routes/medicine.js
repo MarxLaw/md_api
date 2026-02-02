@@ -181,7 +181,7 @@ router.post('/myprofile', async function (req, res, next) {
                 ) AS caregiver_name
             FROM patient_account
             LEFT JOIN caregiver_account 
-            ON patient_account.account_id = caregiver_account.account_id
+            ON patient_account.FK_caregiverid = caregiver_account.account_id
             WHERE patient_account.account_id = ?;`;
     } else {
         return res.status(400).json({ message: "Invalid usertype" });
