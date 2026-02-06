@@ -9,7 +9,7 @@ const mysqlConnection = mysql.createConnection({
     // port: '3308'
 
 
-    host: process.env.MYSQLHOST,
+        host: process.env.MYSQLHOST,
     user: process.env.MYSQLUSER,
     password: process.env.MYSQLPASSWORD,
     database: process.env.MYSQLDATABASE,
