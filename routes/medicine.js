@@ -5,7 +5,7 @@ const router = Router();
 const mysqlConnection = require('../database/database');
 
 
-// Get caregiver medicines
+// Get caregiver mediciness
 router.get('/test', (req, res) => {
     res.send('Medicine route is working');
 });
