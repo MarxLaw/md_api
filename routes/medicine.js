@@ -343,6 +343,27 @@ router.delete('/deleterequest', async function (req, res) {
 });
 
 
+// DELETE medicine route
+router.post('/deletemedicine', async function (req, res) {
+    try {
+
+        const sql = "DELETE FROM medicine WHERE medicine_id = ?";
+        const params = [req.body.medicine_id];
+
+        const [result] = await mysqlConnection.promise().query(sql, params);
+
+        if (result.affectedRows > 0) {
+            res.json({ success: true, message: "Medicine deleted successfully" });
+        } else {
+            res.status(404).json({ success: false, message: "No medicine found to delete" });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
 // router.post('/caregiver', async function (req, res) {
 //     try {
 
