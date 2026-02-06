@@ -82,6 +82,7 @@ router.post('/caregivermedicine', async function (req, res, next) {
             }
 
             return {
+                medicine_id: row.medicine_id,
                 patient_id: row.FK_patient,
                 generic_name: row.name_generic,
                 brand_name: row.name_brand,
