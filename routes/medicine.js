@@ -5,7 +5,6 @@ const router = Router();
 const mysqlConnection = require('../database/database');
 const admin = require('firebase-admin');
 
-
 // Get caregiver mediciness
 router.get('/test', (req, res) => {
     res.send('Medicine route is working');
