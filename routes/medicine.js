@@ -3,6 +3,7 @@
 const { Router } = require('express');
 const router = Router();
 const mysqlConnection = require('../database/database');
+const admin = require('firebase-admin');
 
 
 // Get caregiver medicines
@@ -82,6 +83,7 @@ router.post('/caregivermedicine', async function (req, res, next) {
             }
 
             return {
+                medicine_id: row.medicine_id,
                 patient_id: row.FK_patient,
                 generic_name: row.name_generic,
                 brand_name: row.name_brand,
@@ -179,9 +181,9 @@ router.post('/myprofile', async function (req, res, next) {
                 ' ', 
                 caregiver_account.name_last
                 ) AS caregiver_name
-            FROM patient_app.patient_account
+            FROM patient_account
             LEFT JOIN caregiver_account 
-            ON patient_account.account_id = caregiver_account.account_id
+            ON patient_account.FK_caregiverid = caregiver_account.account_id
             WHERE patient_account.account_id = ?;`;
     } else {
         return res.status(400).json({ message: "Invalid usertype" });
@@ -269,7 +271,7 @@ router.post('/acceptrequest', async function (req, res, next) {
 });
 
 router.post('/checkrequest', async function (req, res, next) {
-    const sql = "SELECT * FROM patient_app.request WHERE FK_patient = ? AND FK_caregiver = ?";
+    const sql = "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ?";
     const params = [req.body.patient_id, req.body.caregiver_id, req.body.status];
 
     try {
@@ -338,6 +340,172 @@ router.delete('/deleterequest', async function (req, res) {
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// DELETE request route
+router.post('/deletemedicine', async function (req, res) {
+    try {
+
+        const sql = "DELETE FROM medicine WHERE medicine_id = ?";
+        const params = [req.body.medicine_id];
+
+        const [result] = await mysqlConnection.promise().query(sql, params);
+
+        if (result.affectedRows > 0) {
+            res.json({ success: true, message: "Medicine deleted successfully" });
+        } else {
+            res.status(404).json({ success: false, message: "No medicine found to delete" });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
+//---------------------------------------------------------------------
+// taken tha medicine route
+
+router.post('/takemedicine', async (req, res) => {
+    const { patient_id, medicine_id } = req.body;
+
+    if (!patient_id || !medicine_id) {
+        return res.status(400).json({
+            success: false,
+            message: 'patient_id and medicine_id are required'
+        });
+    }
+
+    try {
+        // 1. Get medicine details
+        const [medicines] = await mysqlConnection.promise().query(
+            'SELECT * FROM medicine WHERE medicine_id = ? AND FK_patient = ?',
+            [medicine_id, patient_id]
+        );
+
+        if (medicines.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Medicine not found'
+            });
+        }
+
+        const medicine = medicines[0];
+
+        // 2. Check stock
+        if (medicine.stock <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'No stock available'
+            });
+        }
+
+        // 3. Deduct stock
+        const newStock = medicine.stock - 1;
+        await mysqlConnection.promise().query(
+            'UPDATE medicine SET stock = ? WHERE medicine_id = ?',
+            [newStock, medicine_id]
+        );
+
+        console.log(`✅ Stock deducted: ${medicine.name} (${newStock} remaining)`);
+
+        // 4. Get patient info
+        const [patients] = await mysqlConnection.promise().query(
+            'SELECT name_last FROM patient_account WHERE account_id = ?',
+            [patient_id]
+        );
+
+        const patientName = patients.length > 0 ? patients[0].name_last : 'Patient';
+
+        //     // 5. Get caregiver assigned to this patient
+        //     // Adjust this query based on your database structure
+        //     // Option 1: If you have a patient_caregivers table
+        //     const [caregivers] = await db.query(`
+        //   SELECT c.* 
+        //   FROM caregiver_accounts c
+        //   INNER JOIN patient_caregivers pc ON c.id = pc.caregiver_id
+        //   WHERE pc.patient_id = ? AND c.fcm_token IS NOT NULL
+        // `, [patient_id]);
+
+        // Option 2: If patient table has caregiver_id column
+        const [caregivers] = await mysqlConnection.promise().query(`
+              SELECT c.* 
+              FROM caregiver_account c
+              INNER JOIN patient_account p ON c.account_id = p.FK_caregiverid
+              WHERE p.account_id = ? AND c.fcm_token IS NOT NULL
+            `, [patient_id]);
+
+        if (caregivers.length === 0) {
+            console.log('⚠️ No caregiver found for this patient');
+            return res.json({
+                success: true,
+                message: 'Stock updated but no caregiver to notify',
+                new_stock: newStock
+            });
+        }
+
+        // 6. Send FCM notification to caregiver(s)
+        let notificationsSent = 0;
+
+        for (const caregiver of caregivers) {
+            try {
+                const message = {
+                    notification: {
+                        title: '✅ Medicine Taken',
+                        body: `${patientName} took ${medicine.name_generic} (${medicine.dosage})`
+                    },
+                    token: caregiver.fcm_token
+                };
+
+                await admin.messaging().send(message);
+                notificationsSent++;
+                console.log(`✅ Notification sent to ${caregiver.name_first} ${caregiver.name_last}`);
+
+            } catch (error) {
+                console.error(`❌ Failed to send notification to ${caregiver.name_first} ${caregiver.name_last}:`, error);
+            }
+        }
+
+        // 7. Check low stock and notify if needed
+        const lowStockThreshold = 5;
+        if (newStock <= lowStockThreshold) {
+            console.log(`⚠️ Low stock: ${medicine.name_generic} has ${newStock} left`);
+
+            // Send low stock alert to caregivers
+            for (const caregiver of caregivers) {
+                try {
+                    const lowStockMessage = {
+                        notification: {
+                            title: '⚠️ Low Stock Alert',
+                            body: `${medicine.name} is running low! Only ${newStock} left.`
+                        },
+                        token: caregiver.fcm_token
+                    };
+
+                    await admin.messaging().send(lowStockMessage);
+
+                } catch (error) {
+                    console.error('Failed to send low stock alert:', error);
+                }
+            }
+        }
+
+        // Success response
+        res.json({
+            success: true,
+            message: 'Medicine taken successfully',
+            new_stock: newStock,
+            low_stock: newStock <= lowStockThreshold,
+            notifications_sent: notificationsSent
+        });
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error: ' + error.message
+        });
     }
 });
 

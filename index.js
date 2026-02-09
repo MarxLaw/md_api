@@ -1,8 +1,10 @@
 const express = require('express');
+const admin = require('./config/firebase');
 const cors = require('cors');
 const http = require('http');
 //const { Server } = require('socket.io');
 const mysqlConnection = require('./database/database');
+
 
 const app = express();
 const server = http.createServer(app);

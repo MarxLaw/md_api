@@ -62,7 +62,7 @@ router.put('/register', async function (req, res, next) {
 
         // Update the row with account_id
         await mysqlConnection.promise().query(
-            `UPDATE patient_app.${tableName} SET account_id = ? WHERE id = ?`,
+            `UPDATE ${tableName} SET account_id = ? WHERE id = ?`,
             [accountId, pkId]
         );
 
@@ -124,6 +124,38 @@ router.post('/login', async function (req, res, next) {
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+router.post('/updatetoken', async (req, res) => {
+    const { caregiver_id, fcm_token } = req.body;
+
+    if (!caregiver_id || !fcm_token) {
+        return res.status(400).json({
+            success: false,
+            message: 'caregiver_id and fcm_token are required'
+        });
+    }
+
+    try {
+        // Update FCM token in database
+        await mysqlConnection.promise().query(
+            'UPDATE caregiver_account SET fcm_token = ? WHERE account_id = ?',
+            [fcm_token, caregiver_id]
+        );
+
+        console.log(`✅ FCM token updated for caregiver ${caregiver_id}`);
+        res.json({
+            success: true,
+            message: 'FCM token saved successfully'
+        });
+
+    } catch (error) {
+        console.error('❌ Error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error: ' + error.message
+        });
     }
 });
 
