@@ -407,7 +407,7 @@ router.post('/takemedicine', async (req, res) => {
             [newStock, medicine_id]
         );
 
-        console.log(`✅ Stock deducted: ${medicine.name} (${newStock} remaining)`);
+        console.log(`✅ Stock deducted: ${medicine.name_generic} (${newStock} remaining)`);
 
         // 4. Get patient info
         const [patients] = await mysqlConnection.promise().query(
@@ -477,7 +477,7 @@ router.post('/takemedicine', async (req, res) => {
                     const lowStockMessage = {
                         notification: {
                             title: '⚠️ Low Stock Alert',
-                            body: `${medicine.name} is running low! Only ${newStock} left.`
+                            body: `${medicine.name_generic} is running low! Only ${newStock} left.`
                         },
                         token: caregiver.fcm_token
                     };
