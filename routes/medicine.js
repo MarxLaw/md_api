@@ -6,7 +6,7 @@ const mysqlConnection = require('../database/database');
 const admin = require('firebase-admin');
 
 
-// Get caregiver medicines
+// Get caregiver mediciness
 router.get('/test', (req, res) => {
     res.send('Medicine route is working');
 });
@@ -506,6 +506,27 @@ router.post('/takemedicine', async (req, res) => {
             success: false,
             message: 'Server error: ' + error.message
         });
+    }
+});
+
+
+// DELETE medicine route
+router.post('/deletemedicine', async function (req, res) {
+    try {
+
+        const sql = "DELETE FROM medicine WHERE medicine_id = ?";
+        const params = [req.body.medicine_id];
+
+        const [result] = await mysqlConnection.promise().query(sql, params);
+
+        if (result.affectedRows > 0) {
+            res.json({ success: true, message: "Medicine deleted successfully" });
+        } else {
+            res.status(404).json({ success: false, message: "No medicine found to delete" });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
