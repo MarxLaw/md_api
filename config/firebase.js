@@ -14,4 +14,5 @@ if (!admin.apps.length) {
     console.log('⚠️ Firebase already initialized');
 }
 
+
 module.exports = admin;
