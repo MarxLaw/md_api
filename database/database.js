@@ -8,6 +8,10 @@ const mysqlConnection = mysql.createConnection({
     // database: 'marketingdb',
     // port: '3308'
 
+    // host: 'localhost',
+    // user: 'root',
+    // password: 'p@ssw0rd',
+    // database: 'patient_app'
 
     host: process.env.MYSQLHOST,
     user: process.env.MYSQLUSER,

@@ -3,6 +3,8 @@ const router = Router();
 const mysqlConnection = require('../database/database');
 module.exports = router;
 const bcrypt = require("bcrypt");
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const jwt = require("jsonwebtoken");
 require('dotenv').config();
 
@@ -160,6 +162,124 @@ router.post('/updatetoken', async (req, res) => {
 });
 
 
+
+router.post('/forgot-password', async (req, res) => {
+    const { email } = req.body;
+
+    const [users] = await mysqlConnection.promise().query(
+        "SELECT id FROM caregiver_account WHERE email = ?",
+        [email]
+    );
+
+    if (users.length === 0) {
+        return res.status(400).json({ message: "Email not found" });
+    }
+
+    const userId = users[0].id;
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpHash = await bcrypt.hash(otp, 10);
+
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+
+    await mysqlConnection.promise().query(
+        "INSERT INTO password_reset (user_id, otp_hash, expires_at, timestamp) VALUES (?, ?, ?, NOW())",
+        [userId, otpHash, expiresAt]
+    );
+
+    // Send Email
+    const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+            user: process.env.EMAIL_USERNAME,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+
+    await transporter.sendMail({
+        from: "renzbuison23@gmail.com",
+        to: email,
+        subject: "Password Reset OTP",
+        text: `Your OTP is ${otp}`
+    });
+
+    res.json({ success: true });
+});
+
+
+router.post('/verify-otp', async (req, res) => {
+    const { email, otp } = req.body;
+
+    const [users] = await mysqlConnection.promise().query(
+        "SELECT id FROM caregiver_account WHERE email = ?",
+        [email]
+    );
+
+    if (users.length === 0) {
+        return res.status(400).json({ message: "Invalid request" });
+    }
+
+    const userId = users[0].id;
+
+    const [resets] = await mysqlConnection.promise().query(
+        "SELECT * FROM password_reset WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1",
+        [userId]
+    );
+
+    if (resets.length === 0) {
+        return res.status(400).json({ message: "OTP not found" });
+    }
+
+    const reset = resets[0];
+
+    if (new Date() > reset.expires_at) {
+        return res.status(400).json({ message: "OTP expired" });
+    }
+
+    const isMatch = await bcrypt.compare(otp, reset.otp_hash);
+
+    if (!isMatch) {
+        return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    await mysqlConnection.promise().query(
+        "UPDATE password_reset SET verified = 1, reset_token = ? WHERE id = ?",
+        [resetToken, reset.id]
+    );
+
+    res.json({ success: true, reset_token: resetToken });
+});
+
+router.post('/reset-password', async (req, res) => {
+    const { reset_token, new_password } = req.body;
+
+    const [resets] = await mysqlConnection.promise().query(
+        "SELECT * FROM password_reset WHERE reset_token = ? AND verified = 1",
+        [reset_token]
+    );
+
+    if (resets.length === 0) {
+        return res.status(400).json({ message: "Invalid reset session" });
+    }
+
+    const reset = resets[0];
+
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+
+    await mysqlConnection.promise().query(
+        "UPDATE caregiver_account SET password = ? WHERE id = ?",
+        [hashedPassword, reset.user_id]
+    );
+
+    await mysqlConnection.promise().query(
+        "DELETE FROM password_reset WHERE id = ?",
+        [reset.id]
+    );
+
+    res.json({ success: true });
+});
 
 
 

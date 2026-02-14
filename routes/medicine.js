@@ -104,6 +104,61 @@ router.post('/caregivermedicine', async function (req, res, next) {
     }
 });
 
+// Get caregiver's patients medicne for homeview
+router.post('/caregivermedicinehome', async function (req, res, next) {
+    const sql = `SELECT m.*, p.*, c.account_id as caregiver_id FROM medicine m
+                LEFT JOIN patient_account p ON p.account_id = m.FK_patient
+                LEFT JOIN caregiver_account c ON c.account_id = p.FK_caregiverid
+                WHERE c.account_id = ?;`;
+    const params = [req.body.caregiver_id];
+
+    try {
+        const [rows] = await mysqlConnection.promise().query(sql, params);
+
+        if (rows.length === 0) {
+            res.status(404).json({ error: 'No data found' });
+            return;
+        }
+
+        const result = rows.map(row => {
+            let parsedTimes;
+            try {
+                // Check if row.time is already an object (some MySQL drivers auto-parse JSON)
+                if (typeof row.time === 'object') {
+                    parsedTimes = row.time;
+                } else if (typeof row.time === 'string') {
+                    // Trim whitespace and parse
+                    parsedTimes = JSON.parse(row.time.trim());
+                } else {
+                    parsedTimes = [];
+                }
+            } catch (parseError) {
+                console.error('Error parsing time for row:', row.id, 'Value:', row.time);
+                parsedTimes = []; // Default to empty array
+            }
+
+            return {
+                medicine_id: row.medicine_id,
+                patient_id: row.FK_patient,
+                generic_name: row.name_generic,
+                brand_name: row.name_brand,
+                dosage: row.dosage,
+                form: row.form,
+                times: parsedTimes,
+                start_date: row.date_start,
+                end_date: row.date_end,
+                stock: row.stock,
+                alarm_enabled: row.is_alarm,
+                patient_name: `${row.name_first} ${row.name_last}`,
+            };
+        });
+
+        res.json(result);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
 
 // Get caregiver's patients
 
@@ -365,7 +420,7 @@ router.post('/deletemedicine', async function (req, res) {
 
 
 //---------------------------------------------------------------------
-// taken tha medicine route
+// taken the medicine route
 
 router.post('/takemedicine', async (req, res) => {
     const { patient_id, medicine_id } = req.body;
@@ -408,44 +463,46 @@ router.post('/takemedicine', async (req, res) => {
             [newStock, medicine_id]
         );
 
-        console.log(`✅ Stock deducted: ${medicine.name} (${newStock} remaining)`);
+        console.log(`✅ Stock deducted: ${medicine.name_generic} (${newStock} remaining)`);
 
-        // 4. Get patient info
+        // 4. Get patient info and caregiver
         const [patients] = await mysqlConnection.promise().query(
-            'SELECT name_last FROM patient_account WHERE account_id = ?',
+            'SELECT name_last, FK_caregiverid FROM patient_account WHERE account_id = ?',
             [patient_id]
         );
 
         const patientName = patients.length > 0 ? patients[0].name_last : 'Patient';
+        const caregiverId = patients.length > 0 ? patients[0].FK_caregiverid : null;
 
-        //     // 5. Get caregiver assigned to this patient
-        //     // Adjust this query based on your database structure
-        //     // Option 1: If you have a patient_caregivers table
-        //     const [caregivers] = await db.query(`
-        //   SELECT c.* 
-        //   FROM caregiver_accounts c
-        //   INNER JOIN patient_caregivers pc ON c.id = pc.caregiver_id
-        //   WHERE pc.patient_id = ? AND c.fcm_token IS NOT NULL
-        // `, [patient_id]);
+        // 5. Insert medicine history record
+        const currentTime = new Date();
+        await mysqlConnection.promise().query(
+            `INSERT INTO medicine_take 
+            (FK_caregiver, FK_patient, FK_medicine, time_taken, isseen, timestamp) 
+            VALUES (?, ?, ?, ?, ?, ?)`,
+            [caregiverId, patient_id, medicine_id, currentTime, 0, currentTime]
+        );
 
-        // Option 2: If patient table has caregiver_id column
+        console.log(`✅ Medicine history recorded for ${medicine.name_generic}`);
+
+        // 6. Get caregiver info for notifications
         const [caregivers] = await mysqlConnection.promise().query(`
-              SELECT c.* 
-              FROM caregiver_account c
-              INNER JOIN patient_account p ON c.account_id = p.FK_caregiverid
-              WHERE p.account_id = ? AND c.fcm_token IS NOT NULL
-            `, [patient_id]);
+            SELECT c.* 
+            FROM caregiver_account c
+            INNER JOIN patient_account p ON c.account_id = p.FK_caregiverid
+            WHERE p.account_id = ? AND c.fcm_token IS NOT NULL
+        `, [patient_id]);
 
         if (caregivers.length === 0) {
             console.log('⚠️ No caregiver found for this patient');
             return res.json({
                 success: true,
-                message: 'Stock updated but no caregiver to notify',
+                message: 'Stock updated and history recorded, but no caregiver to notify',
                 new_stock: newStock
             });
         }
 
-        // 6. Send FCM notification to caregiver(s)
+        // 7. Send FCM notification to caregiver(s)
         let notificationsSent = 0;
 
         for (const caregiver of caregivers) {
@@ -454,6 +511,12 @@ router.post('/takemedicine', async (req, res) => {
                     notification: {
                         title: '✅ Medicine Taken',
                         body: `${patientName} took ${medicine.name_generic} (${medicine.dosage})`
+                    },
+                    data: {
+                        type: 'medicine_taken',
+                        patient_id: patient_id.toString(),
+                        medicine_id: medicine_id.toString(),
+                        timestamp: currentTime.toISOString()
                     },
                     token: caregiver.fcm_token
                 };
@@ -467,7 +530,7 @@ router.post('/takemedicine', async (req, res) => {
             }
         }
 
-        // 7. Check low stock and notify if needed
+        // 8. Check low stock and notify if needed
         const lowStockThreshold = 5;
         if (newStock <= lowStockThreshold) {
             console.log(`⚠️ Low stock: ${medicine.name_generic} has ${newStock} left`);
@@ -478,7 +541,12 @@ router.post('/takemedicine', async (req, res) => {
                     const lowStockMessage = {
                         notification: {
                             title: '⚠️ Low Stock Alert',
-                            body: `${medicine.name} is running low! Only ${newStock} left.`
+                            body: `${medicine.name_generic} is running low! Only ${newStock} left.`
+                        },
+                        data: {
+                            type: 'low_stock',
+                            medicine_id: medicine_id.toString(),
+                            stock_remaining: newStock.toString()
                         },
                         token: caregiver.fcm_token
                     };
@@ -497,7 +565,8 @@ router.post('/takemedicine', async (req, res) => {
             message: 'Medicine taken successfully',
             new_stock: newStock,
             low_stock: newStock <= lowStockThreshold,
-            notifications_sent: notificationsSent
+            notifications_sent: notificationsSent,
+            history_recorded: true
         });
 
     } catch (error) {
@@ -508,6 +577,96 @@ router.post('/takemedicine', async (req, res) => {
         });
     }
 });
+
+// Get today's medicine intake history for caregiver's patients
+
+router.post('/medicinehistory/:caregiver_id', async (req, res) => {
+    const { caregiver_id } = req.params;
+
+    if (!caregiver_id) {
+        return res.status(400).json({
+            success: false,
+            message: 'caregiver_id is required'
+        });
+    }
+
+    try {
+        // Get today's medicine history for all patients under this caregiver
+        const [history] = await mysqlConnection.promise().query(`
+            SELECT 
+                mh.id,
+                mh.FK_patient,
+                mh.FK_medicine,
+                mh.time_taken,
+                mh.isseen,
+                mh.timestamp,
+                CONCAT(p.name_first, ' ', p.name_last) as patient_name,
+                m.name_generic as medicine_name,
+                m.name_brand as medicine_brand,
+                m.dosage
+            FROM medicine_take mh
+            INNER JOIN patient_account p ON mh.FK_patient = p.account_id
+            INNER JOIN medicine m ON mh.FK_medicine = m.medicine_id
+            WHERE mh.FK_caregiver = ?
+            AND DATE(mh.time_taken) = CURDATE()
+            ORDER BY mh.time_taken DESC
+        `, [caregiver_id]);
+
+        // Count unseen notifications
+        const unseenCount = history.filter(item => item.isseen === 0).length;
+
+        res.json({
+            success: true,
+            message: 'Today\'s medicine history retrieved successfully',
+            data: history,
+            total_count: history.length,
+            unseen_count: unseenCount
+        });
+
+    } catch (error) {
+        console.error('❌ Error fetching medicine history:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error: ' + error.message
+        });
+    }
+});
+
+router.post('/medicinehistory/markallseen/:caregiver_id', async (req, res) => {
+    const { caregiver_id } = req.params;
+
+    if (!caregiver_id) {
+        return res.status(400).json({
+            success: false,
+            message: 'caregiver_id is required'
+        });
+    }
+
+    try {
+        const [result] = await mysqlConnection.promise().query(
+            `UPDATE medicine_take 
+            SET isseen = 1 
+            WHERE FK_caregiver = ? 
+            AND DATE(time_taken) = CURDATE()
+            AND isseen = 0`,
+            [caregiver_id]
+        );
+
+        res.json({
+            success: true,
+            message: 'All medicine history marked as seen',
+            updated_count: result.affectedRows
+        });
+
+    } catch (error) {
+        console.error('❌ Error marking all history as seen:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server error: ' + error.message
+        });
+    }
+});
+
 
 
 // DELETE medicine route
@@ -523,6 +682,26 @@ router.post('/deletemedicine', async function (req, res) {
             res.json({ success: true, message: "Medicine deleted successfully" });
         } else {
             res.status(404).json({ success: false, message: "No medicine found to delete" });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// DELETE patient in caregiver's list
+router.post('/removepatient', async function (req, res) {
+    try {
+
+        const sql = "UPDATE patient_account SET FK_caregiverid = 0 WHERE account_id = ?";
+        const params = [req.body.patient_id];
+
+        const [result] = await mysqlConnection.promise().query(sql, params);
+
+        if (result.affectedRows > 0) {
+            res.json({ success: true, message: "Patient removed from caregiver's list successfully" });
+        } else {
+            res.status(404).json({ success: false, message: "No patient found to remove" });
         }
     } catch (error) {
         console.error(error);
