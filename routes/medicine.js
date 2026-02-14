@@ -5,7 +5,6 @@ const router = Router();
 const mysqlConnection = require('../database/database');
 const admin = require('firebase-admin');
 
-
 // Get caregiver mediciness
 router.get('/test', (req, res) => {
     res.send('Medicine route is working');
@@ -541,12 +540,7 @@ router.post('/takemedicine', async (req, res) => {
                     const lowStockMessage = {
                         notification: {
                             title: '⚠️ Low Stock Alert',
-                            body: `${medicine.name_generic} is running low! Only ${newStock} left.`
-                        },
-                        data: {
-                            type: 'low_stock',
-                            medicine_id: medicine_id.toString(),
-                            stock_remaining: newStock.toString()
+                            body: `${medicine.name} is running low! Only ${newStock} left.`
                         },
                         token: caregiver.fcm_token
                     };
