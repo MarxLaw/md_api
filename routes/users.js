@@ -197,16 +197,18 @@ router.post('/forgot-password', async (req, res) => {
         [userId, otpHash, expiresAt]
     );
 
-    await emailApi.sendTransacEmail({
-        sender: {
-            email: process.env.BREVO_SENDER_EMAIL,
-            name: "Medicine App"
-        },
-        to: [
-            {
-                email: email
-            }
-        ],
+    // Send Email
+    const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+            user: process.env.EMAIL_USERNAME,
+            pass: process.env.EMAIL_PASS
+        }
+    });
+
+    await transporter.sendMail({
+        from: "renzbuison23@gmail.com",
+        to: email,
         subject: "Password Reset OTP",
         textContent: `Your OTP is ${otp}`
     });
