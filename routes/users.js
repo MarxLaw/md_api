@@ -1,4 +1,7 @@
 const { Router } = require('express');
+
+
+require('dotenv').config();
 const router = Router();
 const mysqlConnection = require('../database/database');
 module.exports = router;
@@ -6,7 +9,14 @@ const bcrypt = require("bcrypt");
 const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const jwt = require("jsonwebtoken");
-require('dotenv').config();
+const sgMail = require('@sendgrid/mail');
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const SibApiV3Sdk = require('sib-api-v3-sdk');
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+const apiKey = defaultClient.authentications['api-key'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
+
+const emailApi = new SibApiV3Sdk.TransactionalEmailsApi();
 
 //add users
 router.put('/register', async function (req, res, next) {
@@ -187,21 +197,35 @@ router.post('/forgot-password', async (req, res) => {
         [userId, otpHash, expiresAt]
     );
 
-    // Send Email
-    const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-            user: process.env.EMAIL_USERNAME,
-            pass: process.env.EMAIL_PASS
-        }
+    await emailApi.sendTransacEmail({
+        sender: {
+            email: process.env.BREVO_SENDER_EMAIL,
+            name: "Medicine App"
+        },
+        to: [
+            {
+                email: email
+            }
+        ],
+        subject: "Password Reset OTP",
+        textContent: `Your OTP is ${otp}`
     });
 
-    await transporter.sendMail({
-        from: "renzbuison23@gmail.com",
-        to: email,
-        subject: "Password Reset OTP",
-        text: `Your OTP is ${otp}`
-    });
+    // // Send Email
+    // const transporter = nodemailer.createTransport({
+    //     service: "gmail",
+    //     auth: {
+    //         user: process.env.EMAIL_USERNAME,
+    //         pass: process.env.EMAIL_PASS
+    //     }
+    // });
+
+    // await transporter.sendMail({
+    //     from: "renzbuison23@gmail.com",
+    //     to: email,
+    //     subject: "Password Reset OTP",
+    //     text: `Your OTP is ${otp}`
+    // });
 
     res.json({ success: true });
 });
