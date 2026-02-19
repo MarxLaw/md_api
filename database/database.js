@@ -7,7 +7,7 @@ const mysqlConnection = mysql.createConnection({
     // //database: 'konsulta'
     // database: 'marketingdb',
     // port: '3308'
-
+    
     
 
     
