@@ -540,7 +540,7 @@ router.post('/takemedicine', async (req, res) => {
                     const lowStockMessage = {
                         notification: {
                             title: '⚠️ Low Stock Alert',
-                            body: `${medicine.name} is running low! Only ${newStock} left.`
+                            body: `${medicine.name_generic} is running low! Only ${newStock} left.`
                         },
                         token: caregiver.fcm_token
                     };
