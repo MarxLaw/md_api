@@ -1,234 +1,243 @@
-
-
-const { Router } = require('express');
+const { Router } = require("express");
 const router = Router();
-const mysqlConnection = require('../database/database');
-const admin = require('firebase-admin');
+const mysqlConnection = require("../database/database");
+const admin = require("firebase-admin");
 
 // Get caregiver mediciness
-router.get('/test', (req, res) => {
-    res.send('Medicine route is working');
+router.get("/test", (req, res) => {
+  res.send("Medicine route is working");
 });
 // medicine.js
-router.put('/addmedicine', async (req, res) => {
-    try {
-        const {
-            patient_id,
-            generic_name,
-            brand_name,
-            dosage,
-            form,
-            times,
-            start_date,
-            end_date,
-            stock,
-            alarm_enabled,
-        } = req.body;
+router.put("/addmedicine", async (req, res) => {
+  try {
+    const {
+      patient_id,
+      generic_name,
+      brand_name,
+      dosage,
+      form,
+      times,
+      start_date,
+      end_date,
+      stock,
+      alarm_enabled,
+    } = req.body;
 
-        const sql = `INSERT INTO medicine 
+    const sql = `INSERT INTO medicine 
       (name_generic, name_brand, dosage, form, time, date_start, date_end, stock, is_alarm, FK_patient, date_updated, timestamp) 
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW());`;
 
-        const params = [
-            generic_name,
-            brand_name,
-            dosage,
-            form,
-            JSON.stringify(times),
-            start_date,
-            end_date,
-            stock,
-            alarm_enabled,
-            patient_id,
-        ];
+    const params = [
+      generic_name,
+      brand_name,
+      dosage,
+      form,
+      JSON.stringify(times),
+      start_date,
+      end_date,
+      stock,
+      alarm_enabled,
+      patient_id,
+    ];
 
-        const [result] = await mysqlConnection.promise().query(sql, params);
+    const [result] = await mysqlConnection.promise().query(sql, params);
 
-        res.json({ success: true, id: result.insertId, message: "Medicine inserted successfully" });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+    res.json({
+      success: true,
+      id: result.insertId,
+      message: "Medicine inserted successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
+router.post("/caregivermedicine", async function (req, res, next) {
+  const sql = "SELECT * FROM medicine WHERE FK_patient = ?;";
+  const params = [req.body.patient_id];
 
-router.post('/caregivermedicine', async function (req, res, next) {
-    const sql = "SELECT * FROM medicine WHERE FK_patient = ?;";
-    const params = [req.body.patient_id];
+  try {
+    const [rows] = await mysqlConnection.promise().query(sql, params);
 
-    try {
-        const [rows] = await mysqlConnection.promise().query(sql, params);
-
-        if (rows.length === 0) {
-            res.status(404).json({ error: 'No data found' });
-            return;
-        }
-
-        const result = rows.map(row => {
-            let parsedTimes;
-            try {
-                // Check if row.time is already an object (some MySQL drivers auto-parse JSON)
-                if (typeof row.time === 'object') {
-                    parsedTimes = row.time;
-                } else if (typeof row.time === 'string') {
-                    // Trim whitespace and parse
-                    parsedTimes = JSON.parse(row.time.trim());
-                } else {
-                    parsedTimes = [];
-                }
-            } catch (parseError) {
-                console.error('Error parsing time for row:', row.id, 'Value:', row.time);
-                parsedTimes = []; // Default to empty array
-            }
-
-            return {
-                medicine_id: row.medicine_id,
-                patient_id: row.FK_patient,
-                generic_name: row.name_generic,
-                brand_name: row.name_brand,
-                dosage: row.dosage,
-                form: row.form,
-                times: parsedTimes,
-                start_date: row.date_start,
-                end_date: row.date_end,
-                stock: row.stock,
-                alarm_enabled: row.is_alarm,
-            };
-        });
-
-        res.json(result);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
+    if (rows.length === 0) {
+      res.status(404).json({ error: "No data found" });
+      return;
     }
+
+    const result = rows.map((row) => {
+      let parsedTimes;
+      try {
+        // Check if row.time is already an object (some MySQL drivers auto-parse JSON)
+        if (typeof row.time === "object") {
+          parsedTimes = row.time;
+        } else if (typeof row.time === "string") {
+          // Trim whitespace and parse
+          parsedTimes = JSON.parse(row.time.trim());
+        } else {
+          parsedTimes = [];
+        }
+      } catch (parseError) {
+        console.error(
+          "Error parsing time for row:",
+          row.id,
+          "Value:",
+          row.time,
+        );
+        parsedTimes = []; // Default to empty array
+      }
+
+      return {
+        medicine_id: row.medicine_id,
+        patient_id: row.FK_patient,
+        generic_name: row.name_generic,
+        brand_name: row.name_brand,
+        dosage: row.dosage,
+        form: row.form,
+        times: parsedTimes,
+        start_date: row.date_start,
+        end_date: row.date_end,
+        stock: row.stock,
+        alarm_enabled: row.is_alarm,
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
 // Get caregiver's patients medicne for homeview
-router.post('/caregivermedicinehome', async function (req, res, next) {
-    const sql = `SELECT m.*, p.*, c.account_id as caregiver_id FROM medicine m
+router.post("/caregivermedicinehome", async function (req, res, next) {
+  const sql = `SELECT m.*, p.*, c.account_id as caregiver_id FROM medicine m
                 LEFT JOIN patient_account p ON p.account_id = m.FK_patient
                 LEFT JOIN caregiver_account c ON c.account_id = p.FK_caregiverid
                 WHERE c.account_id = ?;`;
-    const params = [req.body.caregiver_id];
+  const params = [req.body.caregiver_id];
 
-    try {
-        const [rows] = await mysqlConnection.promise().query(sql, params);
+  try {
+    const [rows] = await mysqlConnection.promise().query(sql, params);
 
-        if (rows.length === 0) {
-            res.status(404).json({ error: 'No data found' });
-            return;
-        }
-
-        const result = rows.map(row => {
-            let parsedTimes;
-            try {
-                // Check if row.time is already an object (some MySQL drivers auto-parse JSON)
-                if (typeof row.time === 'object') {
-                    parsedTimes = row.time;
-                } else if (typeof row.time === 'string') {
-                    // Trim whitespace and parse
-                    parsedTimes = JSON.parse(row.time.trim());
-                } else {
-                    parsedTimes = [];
-                }
-            } catch (parseError) {
-                console.error('Error parsing time for row:', row.id, 'Value:', row.time);
-                parsedTimes = []; // Default to empty array
-            }
-
-            return {
-                medicine_id: row.medicine_id,
-                patient_id: row.FK_patient,
-                generic_name: row.name_generic,
-                brand_name: row.name_brand,
-                dosage: row.dosage,
-                form: row.form,
-                times: parsedTimes,
-                start_date: row.date_start,
-                end_date: row.date_end,
-                stock: row.stock,
-                alarm_enabled: row.is_alarm,
-                patient_name: `${row.name_first} ${row.name_last}`,
-            };
-        });
-
-        res.json(result);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
+    if (rows.length === 0) {
+      res.status(404).json({ error: "No data found" });
+      return;
     }
+
+    const result = rows.map((row) => {
+      let parsedTimes;
+      try {
+        // Check if row.time is already an object (some MySQL drivers auto-parse JSON)
+        if (typeof row.time === "object") {
+          parsedTimes = row.time;
+        } else if (typeof row.time === "string") {
+          // Trim whitespace and parse
+          parsedTimes = JSON.parse(row.time.trim());
+        } else {
+          parsedTimes = [];
+        }
+      } catch (parseError) {
+        console.error(
+          "Error parsing time for row:",
+          row.id,
+          "Value:",
+          row.time,
+        );
+        parsedTimes = []; // Default to empty array
+      }
+
+      return {
+        medicine_id: row.medicine_id,
+        patient_id: row.FK_patient,
+        generic_name: row.name_generic,
+        brand_name: row.name_brand,
+        dosage: row.dosage,
+        form: row.form,
+        times: parsedTimes,
+        start_date: row.date_start,
+        end_date: row.date_end,
+        stock: row.stock,
+        alarm_enabled: row.is_alarm,
+        patient_name: `${row.name_first} ${row.name_last}`,
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
 // Get caregiver's patients
 
-router.post('/searchpatient', async function (req, res, next) {
-    const sql = "SELECT * FROM patient_account WHERE account_id = ?;";
-    const params = [req.body.account_id];
+router.post("/searchpatient", async function (req, res, next) {
+  const sql = "SELECT * FROM patient_account WHERE account_id = ?;";
+  const params = [req.body.account_id];
 
-    try {
-        const [rows] = await mysqlConnection.promise().query(sql, params);
+  try {
+    const [rows] = await mysqlConnection.promise().query(sql, params);
 
-        if (rows.length === 0) {
-            res.status(404).json({ error: 'No data found' });
-            return;
-        }
-
-        const result = rows.map(row => ({
-            patient_id: row.id,
-            account_id: row.account_id,
-            name_last: row.name_last,
-            name_first: row.name_first,
-            name_middle: row.name_middle,
-            email: row.email,
-            username: row.username,
-        }));
-
-        res.json(result);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
+    if (rows.length === 0) {
+      res.status(404).json({ error: "No data found" });
+      return;
     }
+
+    const result = rows.map((row) => ({
+      patient_id: row.id,
+      account_id: row.account_id,
+      name_last: row.name_last,
+      name_first: row.name_first,
+      name_middle: row.name_middle,
+      email: row.email,
+      username: row.username,
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
+router.post("/fetchpatient", async function (req, res, next) {
+  const sql = "SELECT * FROM patient_account WHERE FK_caregiverid = ?;";
+  const params = [req.body.account_id];
 
-router.post('/fetchpatient', async function (req, res, next) {
-    const sql = "SELECT * FROM patient_account WHERE FK_caregiverid = ?;";
-    const params = [req.body.account_id];
+  try {
+    const [rows] = await mysqlConnection.promise().query(sql, params);
 
-    try {
-        const [rows] = await mysqlConnection.promise().query(sql, params);
-
-        if (rows.length === 0) {
-            res.status(404).json({ error: 'No data found' });
-            return;
-        }
-
-        const result = rows.map(row => ({
-            patient_id: row.id,
-            account_id: row.account_id,
-            fk_caregiverid: row.FK_caregiverid,
-            name_last: row.name_last,
-            name_first: row.name_first,
-            name_middle: row.name_middle,
-            email: row.email,
-            username: row.username,
-        }));
-
-        res.json(result);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
+    if (rows.length === 0) {
+      res.status(404).json({ error: "No data found" });
+      return;
     }
+
+    const result = rows.map((row) => ({
+      patient_id: row.id,
+      account_id: row.account_id,
+      fk_caregiverid: row.FK_caregiverid,
+      name_last: row.name_last,
+      name_first: row.name_first,
+      name_middle: row.name_middle,
+      email: row.email,
+      username: row.username,
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
-router.post('/myprofile', async function (req, res, next) {
-
-    const { account_id, usertype } = req.body;
-    let sql;
-    if (usertype === "caregiver") {
-        sql = "SELECT * FROM caregiver_account WHERE account_id = ?;";
-    } else if (usertype === "patient") {
-        sql = `SELECT 
+router.post("/myprofile", async function (req, res, next) {
+  const { account_id, usertype } = req.body;
+  let sql;
+  if (usertype === "caregiver") {
+    sql = "SELECT * FROM caregiver_account WHERE account_id = ?;";
+  } else if (usertype === "patient") {
+    sql = `SELECT 
             patient_account.*,
             CONCAT(
                 caregiver_account.name_first, 
@@ -239,354 +248,381 @@ router.post('/myprofile', async function (req, res, next) {
             LEFT JOIN caregiver_account 
             ON patient_account.FK_caregiverid = caregiver_account.account_id
             WHERE patient_account.account_id = ?;`;
-    } else {
-        return res.status(400).json({ message: "Invalid usertype" });
+  } else {
+    return res.status(400).json({ message: "Invalid usertype" });
+  }
+  const params = [account_id];
+  try {
+    const [rows] = await mysqlConnection.promise().query(sql, params);
+
+    if (rows.length === 0) {
+      res.status(404).json({ error: "No data found" });
+      return;
     }
-    const params = [account_id];
-    try {
-        const [rows] = await mysqlConnection.promise().query(sql, params);
 
-        if (rows.length === 0) {
-            res.status(404).json({ error: 'No data found' });
-            return;
-        }
+    const result = rows.map((row) => ({
+      patient_id: row.id,
+      account_id: row.account_id,
+      caregiver_name: row.caregiver_name,
+      name_last: row.name_last,
+      name_first: row.name_first,
+      name_middle: row.name_middle,
+      email: row.email,
+      username: row.username,
+    }));
 
-        const result = rows.map(row => ({
-            patient_id: row.id,
-            account_id: row.account_id,
-            caregiver_name: row.caregiver_name,
-            name_last: row.name_last,
-            name_first: row.name_first,
-            name_middle: row.name_middle,
-            email: row.email,
-            username: row.username,
-        }));
-
-        res.json(result);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
-    }
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
-
-router.post('/fetchrequest', async function (req, res, next) {
-    const sql = `SELECT * FROM request 
+router.post("/fetchrequest", async function (req, res, next) {
+  const sql = `SELECT * FROM request 
                 left join caregiver_account on 
                 caregiver_account.account_id = request.FK_caregiver 
                 WHERE FK_patient = ?  AND status = 0;`;
-    const params = [req.body.patient_id];
+  const params = [req.body.patient_id];
 
-    try {
-        const [rows] = await mysqlConnection.promise().query(sql, params);
+  try {
+    const [rows] = await mysqlConnection.promise().query(sql, params);
 
-        if (rows.length === 0) {
-            res.status(404).json({ error: 'No data found' });
-            return;
-        }
-
-        const result = rows.map(row => ({
-            id: row.request_id,
-            patient_id: row.FK_patient,
-            caregiver_id: row.FK_caregiver,
-            caregiver_name: `${row.name_first} ${row.name_last}`,
-            status: row.status,
-            created_at: row.date_request,
-        }));
-
-        res.json(result);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
+    if (rows.length === 0) {
+      res.status(404).json({ error: "No data found" });
+      return;
     }
+
+    const result = rows.map((row) => ({
+      id: row.request_id,
+      patient_id: row.FK_patient,
+      caregiver_id: row.FK_caregiver,
+      caregiver_name: `${row.name_first} ${row.name_last}`,
+      status: row.status,
+      created_at: row.date_request,
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
-router.post('/acceptrequest', async function (req, res, next) {
-    const sql = "UPDATE request SET `status` = '1' WHERE request_id = ?;";
-    const sql2 = "UPDATE patient_account SET FK_caregiverid = ? WHERE account_id = ?;";
-    const params = [req.body.request_id];
-    const params2 = [req.body.caregiver_id, req.body.patient_id];
+router.post("/acceptrequest", async function (req, res, next) {
+  const sql = "UPDATE request SET `status` = '1' WHERE request_id = ?;";
+  const sql2 =
+    "UPDATE patient_account SET FK_caregiverid = ? WHERE account_id = ?;";
+  const params = [req.body.request_id];
+  const params2 = [req.body.caregiver_id, req.body.patient_id];
 
-    try {
-        const [rows] = await mysqlConnection.promise().query(sql, params);
+  try {
+    const [rows] = await mysqlConnection.promise().query(sql, params);
 
-        if (rows.length === 0) {
-            // No existing request
-            return res.json({ success: false });
-        }
-
-        const [rows2] = await mysqlConnection.promise().query(sql2, params2);
-        // Request exists
-        return res.json({ success: true, data: rows2 });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
+    if (rows.length === 0) {
+      // No existing request
+      return res.json({ success: false });
     }
+
+    const [rows2] = await mysqlConnection.promise().query(sql2, params2);
+    // Request exists
+    return res.json({ success: true, data: rows2 });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
-router.post('/checkrequest', async function (req, res, next) {
-    const sql = "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ?";
-    const params = [req.body.patient_id, req.body.caregiver_id, req.body.status];
+router.post("/checkrequest", async function (req, res, next) {
+  const sql = "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ?";
+  const params = [req.body.patient_id, req.body.caregiver_id, req.body.status];
 
-    try {
-        const [rows] = await mysqlConnection.promise().query(sql, params);
+  try {
+    const [rows] = await mysqlConnection.promise().query(sql, params);
 
-        if (rows.length === 0) {
-            // No existing request
-            return res.json({ exists: false });
-        }
-
-        // Request exists
-        return res.json({ exists: true, data: rows });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error' });
+    if (rows.length === 0) {
+      // No existing request
+      return res.json({ exists: false });
     }
+
+    // Request exists
+    return res.json({ exists: true, data: rows });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
 });
 
+router.put("/sendrequest", async function (req, res, next) {
+  try {
+    const checkSql =
+      "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ? AND status = ?";
+    const [rows] = await mysqlConnection
+      .promise()
+      .query(checkSql, [
+        req.body.patient_id,
+        req.body.caregiver_id,
+        req.body.status,
+      ]);
 
-router.put('/sendrequest', async function (req, res, next) {
-    try {
-
-        const checkSql = "SELECT * FROM request WHERE FK_patient = ? AND FK_caregiver = ? AND status = ?";
-        const [rows] = await mysqlConnection.promise().query(checkSql, [req.body.patient_id, req.body.caregiver_id, req.body.status]);
-
-        if (rows.length > 0) {
-            return res.status(400).send({
-                issuccess: 0,
-                message: "Request already exists",
-            });
-        }
-
-        const sql = "INSERT INTO request (`FK_patient`, `FK_caregiver`, `status`, `date_request`, `timestamp`) VALUES (?, ?, ?, NOW(), NOW());";
-        const params = [req.body.patient_id, req.body.caregiver_id, req.body.status];
-
-        const [pk, message] = await mysqlConnection.promise().query(sql, params);
-
-        const result = {
-            issucces: (pk == 0 ? 0 : 1),
-            primarykey: pk,
-            error: message
-        };
-
-        res.send(result);
-
-    } catch (error) {
-        // Always send a response on error
-        res.status(500).send({ issucces: 0, error: error.message });
+    if (rows.length > 0) {
+      return res.status(400).send({
+        issuccess: 0,
+        message: "Request already exists",
+      });
     }
-});
 
-// DELETE request route
-router.delete('/deleterequest', async function (req, res) {
-    try {
+    const sql =
+      "INSERT INTO request (`FK_patient`, `FK_caregiver`, `status`, `date_request`, `timestamp`) VALUES (?, ?, ?, NOW(), NOW());";
+    const params = [
+      req.body.patient_id,
+      req.body.caregiver_id,
+      req.body.status,
+    ];
 
-        const sql = "DELETE FROM request WHERE FK_patient = ? AND FK_caregiver = ?";
-        const params = [req.body.patient_id, req.body.caregiver_id];
+    const [pk, message] = await mysqlConnection.promise().query(sql, params);
 
-        const [result] = await mysqlConnection.promise().query(sql, params);
+    const result = {
+      issucces: pk == 0 ? 0 : 1,
+      primarykey: pk,
+      error: message,
+    };
 
-        if (result.affectedRows > 0) {
-            res.json({ success: true, message: "Request deleted successfully" });
-        } else {
-            res.status(404).json({ success: false, message: "No request found to delete" });
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, error: error.message });
-    }
+    res.send(result);
+  } catch (error) {
+    // Always send a response on error
+    res.status(500).send({ issucces: 0, error: error.message });
+  }
 });
 
 // DELETE request route
-router.post('/deletemedicine', async function (req, res) {
-    try {
+router.delete("/deleterequest", async function (req, res) {
+  try {
+    const sql = "DELETE FROM request WHERE FK_patient = ? AND FK_caregiver = ?";
+    const params = [req.body.patient_id, req.body.caregiver_id];
 
-        const sql = "DELETE FROM medicine WHERE medicine_id = ?";
-        const params = [req.body.medicine_id];
+    const [result] = await mysqlConnection.promise().query(sql, params);
 
-        const [result] = await mysqlConnection.promise().query(sql, params);
-
-        if (result.affectedRows > 0) {
-            res.json({ success: true, message: "Medicine deleted successfully" });
-        } else {
-            res.status(404).json({ success: false, message: "No medicine found to delete" });
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, error: error.message });
+    if (result.affectedRows > 0) {
+      res.json({ success: true, message: "Request deleted successfully" });
+    } else {
+      res
+        .status(404)
+        .json({ success: false, message: "No request found to delete" });
     }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
+// DELETE request route
+router.post("/deletemedicine", async function (req, res) {
+  try {
+    const sql = "DELETE FROM medicine WHERE medicine_id = ?";
+    const params = [req.body.medicine_id];
+
+    const [result] = await mysqlConnection.promise().query(sql, params);
+
+    if (result.affectedRows > 0) {
+      res.json({ success: true, message: "Medicine deleted successfully" });
+    } else {
+      res
+        .status(404)
+        .json({ success: false, message: "No medicine found to delete" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 //---------------------------------------------------------------------
 // taken the medicine route
 
-router.post('/takemedicine', async (req, res) => {
-    const { patient_id, medicine_id } = req.body;
+router.post("/takemedicine", async (req, res) => {
+  const { patient_id, medicine_id } = req.body;
 
-    if (!patient_id || !medicine_id) {
-        return res.status(400).json({
-            success: false,
-            message: 'patient_id and medicine_id are required'
-        });
+  if (!patient_id || !medicine_id) {
+    return res.status(400).json({
+      success: false,
+      message: "patient_id and medicine_id are required",
+    });
+  }
+
+  try {
+    // 1. Get medicine details
+    const [medicines] = await mysqlConnection
+      .promise()
+      .query(
+        "SELECT * FROM medicine WHERE medicine_id = ? AND FK_patient = ?",
+        [medicine_id, patient_id],
+      );
+
+    if (medicines.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Medicine not found",
+      });
     }
 
-    try {
-        // 1. Get medicine details
-        const [medicines] = await mysqlConnection.promise().query(
-            'SELECT * FROM medicine WHERE medicine_id = ? AND FK_patient = ?',
-            [medicine_id, patient_id]
-        );
+    const medicine = medicines[0];
 
-        if (medicines.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: 'Medicine not found'
-            });
-        }
+    // 2. Check stock
+    if (medicine.stock <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No stock available",
+      });
+    }
 
-        const medicine = medicines[0];
+    // 3. Deduct stock
+    const newStock = medicine.stock - 1;
+    await mysqlConnection
+      .promise()
+      .query("UPDATE medicine SET stock = ? WHERE medicine_id = ?", [
+        newStock,
+        medicine_id,
+      ]);
 
-        // 2. Check stock
-        if (medicine.stock <= 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'No stock available'
-            });
-        }
+    console.log(
+      `✅ Stock deducted: ${medicine.name_generic} (${newStock} remaining)`,
+    );
 
-        // 3. Deduct stock
-        const newStock = medicine.stock - 1;
-        await mysqlConnection.promise().query(
-            'UPDATE medicine SET stock = ? WHERE medicine_id = ?',
-            [newStock, medicine_id]
-        );
+    // 4. Get patient info and caregiver
+    const [patients] = await mysqlConnection
+      .promise()
+      .query(
+        "SELECT name_last, FK_caregiverid FROM patient_account WHERE account_id = ?",
+        [patient_id],
+      );
 
-        console.log(`✅ Stock deducted: ${medicine.name_generic} (${newStock} remaining)`);
+    const patientName = patients.length > 0 ? patients[0].name_last : "Patient";
+    const caregiverId = patients.length > 0 ? patients[0].FK_caregiverid : null;
 
-        // 4. Get patient info and caregiver
-        const [patients] = await mysqlConnection.promise().query(
-            'SELECT name_last, FK_caregiverid FROM patient_account WHERE account_id = ?',
-            [patient_id]
-        );
-
-        const patientName = patients.length > 0 ? patients[0].name_last : 'Patient';
-        const caregiverId = patients.length > 0 ? patients[0].FK_caregiverid : null;
-
-        // 5. Insert medicine history record
-        const currentTime = new Date();
-        await mysqlConnection.promise().query(
-            `INSERT INTO medicine_take 
+    // 5. Insert medicine history record
+    const currentTime = new Date();
+    await mysqlConnection.promise().query(
+      `INSERT INTO medicine_take 
             (FK_caregiver, FK_patient, FK_medicine, time_taken, isseen, timestamp) 
             VALUES (?, ?, ?, ?, ?, ?)`,
-            [caregiverId, patient_id, medicine_id, currentTime, 0, currentTime]
-        );
+      [caregiverId, patient_id, medicine_id, currentTime, 0, currentTime],
+    );
 
-        console.log(`✅ Medicine history recorded for ${medicine.name_generic}`);
+    console.log(`✅ Medicine history recorded for ${medicine.name_generic}`);
 
-        // 6. Get caregiver info for notifications
-        const [caregivers] = await mysqlConnection.promise().query(`
+    // 6. Get caregiver info for notifications
+    const [caregivers] = await mysqlConnection.promise().query(
+      `
             SELECT c.* 
             FROM caregiver_account c
             INNER JOIN patient_account p ON c.account_id = p.FK_caregiverid
             WHERE p.account_id = ? AND c.fcm_token IS NOT NULL
-        `, [patient_id]);
+        `,
+      [patient_id],
+    );
 
-        if (caregivers.length === 0) {
-            console.log('⚠️ No caregiver found for this patient');
-            return res.json({
-                success: true,
-                message: 'Stock updated and history recorded, but no caregiver to notify',
-                new_stock: newStock
-            });
-        }
-
-        // 7. Send FCM notification to caregiver(s)
-        let notificationsSent = 0;
-
-        for (const caregiver of caregivers) {
-            try {
-                const message = {
-                    notification: {
-                        title: '✅ Medicine Taken',
-                        body: `${patientName} took ${medicine.name_generic} (${medicine.dosage})`
-                    },
-                    data: {
-                        type: 'medicine_taken',
-                        patient_id: patient_id.toString(),
-                        medicine_id: medicine_id.toString(),
-                        timestamp: currentTime.toISOString()
-                    },
-                    token: caregiver.fcm_token
-                };
-
-                await admin.messaging().send(message);
-                notificationsSent++;
-                console.log(`✅ Notification sent to ${caregiver.name_first} ${caregiver.name_last}`);
-
-            } catch (error) {
-                console.error(`❌ Failed to send notification to ${caregiver.name_first} ${caregiver.name_last}:`, error);
-            }
-        }
-
-        // 8. Check low stock and notify if needed
-        const lowStockThreshold = 5;
-        if (newStock <= lowStockThreshold) {
-            console.log(`⚠️ Low stock: ${medicine.name_generic} has ${newStock} left`);
-
-            // Send low stock alert to caregivers
-            for (const caregiver of caregivers) {
-                try {
-                    const lowStockMessage = {
-                        notification: {
-                            title: '⚠️ Low Stock Alert',
-                            body: `${medicine.name} is running low! Only ${newStock} left.`
-                        },
-                        token: caregiver.fcm_token
-                    };
-
-                    await admin.messaging().send(lowStockMessage);
-
-                } catch (error) {
-                    console.error('Failed to send low stock alert:', error);
-                }
-            }
-        }
-
-        // Success response
-        res.json({
-            success: true,
-            message: 'Medicine taken successfully',
-            new_stock: newStock,
-            low_stock: newStock <= lowStockThreshold,
-            notifications_sent: notificationsSent,
-            history_recorded: true
-        });
-
-    } catch (error) {
-        console.error('❌ Error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error: ' + error.message
-        });
+    if (caregivers.length === 0) {
+      console.log("⚠️ No caregiver found for this patient");
+      return res.json({
+        success: true,
+        message:
+          "Stock updated and history recorded, but no caregiver to notify",
+        new_stock: newStock,
+      });
     }
+
+    // 7. Send FCM notification to caregiver(s)
+    let notificationsSent = 0;
+
+    for (const caregiver of caregivers) {
+      try {
+        const message = {
+          notification: {
+            title: "✅ Medicine Taken",
+            body: `${patientName} took ${medicine.name_generic} (${medicine.dosage})`,
+          },
+          data: {
+            type: "medicine_taken",
+            patient_id: patient_id.toString(),
+            medicine_id: medicine_id.toString(),
+            timestamp: currentTime.toISOString(),
+          },
+          token: caregiver.fcm_token,
+        };
+
+        await admin.messaging().send(message);
+        notificationsSent++;
+        console.log(
+          `✅ Notification sent to ${caregiver.name_first} ${caregiver.name_last}`,
+        );
+      } catch (error) {
+        console.error(
+          `❌ Failed to send notification to ${caregiver.name_first} ${caregiver.name_last}:`,
+          error,
+        );
+      }
+    }
+
+    // 8. Check low stock and notify if needed
+    const lowStockThreshold = 5;
+    if (newStock <= lowStockThreshold) {
+      console.log(
+        `⚠️ Low stock: ${medicine.name_generic} has ${newStock} left`,
+      );
+
+      // Send low stock alert to caregivers
+      for (const caregiver of caregivers) {
+        try {
+          const lowStockMessage = {
+            notification: {
+              title: "⚠️ Low Stock Alert",
+              body: `${medicine.name_generic} is running low! Only ${newStock} left.`,
+            },
+            token: caregiver.fcm_token,
+          };
+
+          await admin.messaging().send(lowStockMessage);
+        } catch (error) {
+          console.error("Failed to send low stock alert:", error);
+        }
+      }
+    }
+
+    // Success response
+    res.json({
+      success: true,
+      message: "Medicine taken successfully",
+      new_stock: newStock,
+      low_stock: newStock <= lowStockThreshold,
+      notifications_sent: notificationsSent,
+      history_recorded: true,
+    });
+  } catch (error) {
+    console.error("❌ Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error: " + error.message,
+    });
+  }
 });
 
 // Get today's medicine intake history for caregiver's patients
 
-router.post('/medicinehistory/:caregiver_id', async (req, res) => {
-    const { caregiver_id } = req.params;
+router.post("/medicinehistory/:caregiver_id", async (req, res) => {
+  const { caregiver_id } = req.params;
 
-    if (!caregiver_id) {
-        return res.status(400).json({
-            success: false,
-            message: 'caregiver_id is required'
-        });
-    }
+  if (!caregiver_id) {
+    return res.status(400).json({
+      success: false,
+      message: "caregiver_id is required",
+    });
+  }
 
-    try {
-        // Get today's medicine history for all patients under this caregiver
-        const [history] = await mysqlConnection.promise().query(`
+  try {
+    // Get today's medicine history for all patients under this caregiver
+    const [history] = await mysqlConnection.promise().query(
+      `
             SELECT 
                 mh.id,
                 mh.FK_patient,
@@ -604,109 +640,111 @@ router.post('/medicinehistory/:caregiver_id', async (req, res) => {
             WHERE mh.FK_caregiver = ?
             AND DATE(mh.time_taken) = CURDATE()
             ORDER BY mh.time_taken DESC
-        `, [caregiver_id]);
+        `,
+      [caregiver_id],
+    );
 
-        // Count unseen notifications
-        const unseenCount = history.filter(item => item.isseen === 0).length;
+    // Count unseen notifications
+    const unseenCount = history.filter((item) => item.isseen === 0).length;
 
-        res.json({
-            success: true,
-            message: 'Today\'s medicine history retrieved successfully',
-            data: history,
-            total_count: history.length,
-            unseen_count: unseenCount
-        });
-
-    } catch (error) {
-        console.error('❌ Error fetching medicine history:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error: ' + error.message
-        });
-    }
+    res.json({
+      success: true,
+      message: "Today's medicine history retrieved successfully",
+      data: history,
+      total_count: history.length,
+      unseen_count: unseenCount,
+    });
+  } catch (error) {
+    console.error("❌ Error fetching medicine history:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error: " + error.message,
+    });
+  }
 });
 
-router.post('/medicinehistory/markallseen/:caregiver_id', async (req, res) => {
-    const { caregiver_id } = req.params;
+router.post("/medicinehistory/markallseen/:caregiver_id", async (req, res) => {
+  const { caregiver_id } = req.params;
 
-    if (!caregiver_id) {
-        return res.status(400).json({
-            success: false,
-            message: 'caregiver_id is required'
-        });
-    }
+  if (!caregiver_id) {
+    return res.status(400).json({
+      success: false,
+      message: "caregiver_id is required",
+    });
+  }
 
-    try {
-        const [result] = await mysqlConnection.promise().query(
-            `UPDATE medicine_take 
+  try {
+    const [result] = await mysqlConnection.promise().query(
+      `UPDATE medicine_take 
             SET isseen = 1 
             WHERE FK_caregiver = ? 
             AND DATE(time_taken) = CURDATE()
             AND isseen = 0`,
-            [caregiver_id]
-        );
+      [caregiver_id],
+    );
 
-        res.json({
-            success: true,
-            message: 'All medicine history marked as seen',
-            updated_count: result.affectedRows
-        });
-
-    } catch (error) {
-        console.error('❌ Error marking all history as seen:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server error: ' + error.message
-        });
-    }
+    res.json({
+      success: true,
+      message: "All medicine history marked as seen",
+      updated_count: result.affectedRows,
+    });
+  } catch (error) {
+    console.error("❌ Error marking all history as seen:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error: " + error.message,
+    });
+  }
 });
 
-
-
 // DELETE medicine route
-router.post('/deletemedicine', async function (req, res) {
-    try {
+router.post("/deletemedicine", async function (req, res) {
+  try {
+    const sql = "DELETE FROM medicine WHERE medicine_id = ?";
+    const params = [req.body.medicine_id];
 
-        const sql = "DELETE FROM medicine WHERE medicine_id = ?";
-        const params = [req.body.medicine_id];
+    const [result] = await mysqlConnection.promise().query(sql, params);
 
-        const [result] = await mysqlConnection.promise().query(sql, params);
-
-        if (result.affectedRows > 0) {
-            res.json({ success: true, message: "Medicine deleted successfully" });
-        } else {
-            res.status(404).json({ success: false, message: "No medicine found to delete" });
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, error: error.message });
+    if (result.affectedRows > 0) {
+      res.json({ success: true, message: "Medicine deleted successfully" });
+    } else {
+      res
+        .status(404)
+        .json({ success: false, message: "No medicine found to delete" });
     }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // DELETE patient in caregiver's list
-router.post('/removepatient', async function (req, res) {
-    try {
+router.post("/removepatient", async function (req, res) {
+  try {
+    const sql =
+      "UPDATE patient_account SET FK_caregiverid = 0 WHERE account_id = ?";
+    const params = [req.body.patient_id];
 
-        const sql = "UPDATE patient_account SET FK_caregiverid = 0 WHERE account_id = ?";
-        const params = [req.body.patient_id];
+    const [result] = await mysqlConnection.promise().query(sql, params);
 
-        const [result] = await mysqlConnection.promise().query(sql, params);
-
-        if (result.affectedRows > 0) {
-            res.json({ success: true, message: "Patient removed from caregiver's list successfully" });
-        } else {
-            res.status(404).json({ success: false, message: "No patient found to remove" });
-        }
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, error: error.message });
+    if (result.affectedRows > 0) {
+      res.json({
+        success: true,
+        message: "Patient removed from caregiver's list successfully",
+      });
+    } else {
+      res
+        .status(404)
+        .json({ success: false, message: "No patient found to remove" });
     }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
-
 
 // router.post('/caregiver', async function (req, res) {
 //     try {
-
 
 //         const sql = `SELECT * FROM caregiver_account`;
 
@@ -737,6 +775,5 @@ router.post('/removepatient', async function (req, res) {
 //         res.status(500).send({ error: 'Internal Server Error' });
 //     }
 // });
-
 
 module.exports = router;
