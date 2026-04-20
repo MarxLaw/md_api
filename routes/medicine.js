@@ -16,7 +16,7 @@ router.put("/addmedicine", async (req, res) => {
       brand_name,
       dosage,
       form,
-      days,
+      selected_days,
       times,
       start_date,
       end_date,
