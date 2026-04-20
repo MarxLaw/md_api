@@ -33,7 +33,7 @@ router.put("/addmedicine", async (req, res) => {
       brand_name,
       dosage,
       form,
-      JSON.stringify(days),
+      JSON.stringify(selected_days),
       JSON.stringify(times),
       start_date,
       end_date,
