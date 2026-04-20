@@ -16,6 +16,7 @@ router.put("/addmedicine", async (req, res) => {
       brand_name,
       dosage,
       form,
+      days,
       times,
       start_date,
       end_date,
@@ -24,14 +25,15 @@ router.put("/addmedicine", async (req, res) => {
     } = req.body;
 
     const sql = `INSERT INTO medicine 
-      (name_generic, name_brand, dosage, form, time, date_start, date_end, stock, is_alarm, FK_patient, date_updated, timestamp) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW());`;
+      (name_generic, name_brand, dosage, form, day, time, date_start, date_end, stock, is_alarm, FK_patient, date_updated, timestamp) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW());`;
 
     const params = [
       generic_name,
       brand_name,
       dosage,
       form,
+      JSON.stringify(days),
       JSON.stringify(times),
       start_date,
       end_date,
@@ -87,6 +89,26 @@ router.post("/caregivermedicine", async function (req, res, next) {
         parsedTimes = []; // Default to empty array
       }
 
+      // ✅ Parse selected_days (same pattern as times)
+      let parsedDays;
+      try {
+        if (typeof row.day === "object" && row.day !== null) {
+          parsedDays = row.day;
+        } else if (typeof row.day === "string") {
+          parsedDays = JSON.parse(row.day.trim());
+        } else {
+          parsedDays = [1, 2, 3, 4, 5, 6, 7]; // Default: every day
+        }
+      } catch (parseError) {
+        console.error(
+          "Error parsing selected_days for row:",
+          row.medicine_id,
+          "Value:",
+          row.selected_days,
+        );
+        parsedDays = [1, 2, 3, 4, 5, 6, 7]; // Default: every day
+      }
+
       return {
         medicine_id: row.medicine_id,
         patient_id: row.FK_patient,
@@ -99,6 +121,7 @@ router.post("/caregivermedicine", async function (req, res, next) {
         end_date: row.date_end,
         stock: row.stock,
         alarm_enabled: row.is_alarm,
+        selected_days: parsedDays,
       };
     });
 
@@ -147,6 +170,26 @@ router.post("/caregivermedicinehome", async function (req, res, next) {
         parsedTimes = []; // Default to empty array
       }
 
+      // ✅ Parse selected_days (same pattern as times)
+      let parsedDays;
+      try {
+        if (typeof row.day === "object" && row.day !== null) {
+          parsedDays = row.day;
+        } else if (typeof row.day === "string") {
+          parsedDays = JSON.parse(row.day.trim());
+        } else {
+          parsedDays = [1, 2, 3, 4, 5, 6, 7]; // Default: every day
+        }
+      } catch (parseError) {
+        console.error(
+          "Error parsing selected_days for row:",
+          row.medicine_id,
+          "Value:",
+          row.selected_days,
+        );
+        parsedDays = [1, 2, 3, 4, 5, 6, 7]; // Default: every day
+      }
+
       return {
         medicine_id: row.medicine_id,
         patient_id: row.FK_patient,
@@ -159,6 +202,7 @@ router.post("/caregivermedicinehome", async function (req, res, next) {
         end_date: row.date_end,
         stock: row.stock,
         alarm_enabled: row.is_alarm,
+        selected_days: parsedDays,
         patient_name: `${row.name_first} ${row.name_last}`,
       };
     });
@@ -577,7 +621,7 @@ router.post("/takemedicine", async (req, res) => {
           const lowStockMessage = {
             notification: {
               title: "⚠️ Low Stock Alert",
-              body: `${medicine.name_generic} is running low! Only ${newStock} left.`,
+              body: `${medicine.name} is running low! Only ${newStock} left.`,
             },
             token: caregiver.fcm_token,
           };
